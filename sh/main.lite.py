@@ -24,14 +24,10 @@ def run_analysis(ticker: str, trade_date: str = None):
         print(f"✅ 已加载配置: {env_path}")
 
     # 读取环境变量
-    api_key = os.getenv("OPENAI_API_KEY", "")
     backend_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     deep_think_model = os.getenv("DEEP_THINK_MODEL", "gpt-4o-mini")
     quick_think_model = os.getenv("QUICK_THINK_MODEL", "gpt-4o-mini")
-
-    # 设置到环境变量（供 OpenAI client 使用）
-    os.environ["OPENAI_API_KEY"] = api_key
-    os.environ["OPENAI_BASE_URL"] = backend_url
+    api_key = os.getenv("OPENAI_API_KEY", "")
 
     print(f"🔗 Backend URL: {backend_url}")
     print(f"🤖 Deep LLM: {deep_think_model}")
