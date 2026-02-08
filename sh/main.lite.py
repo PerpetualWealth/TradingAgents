@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TradingAgents Lite - 轻量版股票分析
-使用 yfinance 数据 + Minimax 单次 LLM 调用
+使用 yfinance 数据 + 自定义 OpenAI 兼容模型
 快速生成分析报告
 """
 
@@ -10,20 +10,23 @@ import json
 from datetime import date, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
+from argparse import ArgumentParser
 
 import yfinance as yf
 
 
 def load_config():
-    """加载配置"""
-    config_path = os.path.expanduser("~/tradingagent-env")
-    if os.path.exists(config_path):
-        load_dotenv(config_path)
+    """从 .env 加载配置"""
+    script_dir = Path(__file__).parent.parent
+    env_path = script_dir / ".env"
+
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
 
     return {
         "api_key": os.getenv("OPENAI_API_KEY", ""),
-        "base_url": os.getenv("OPENAI_BASE_URL", "https://api.minimaxi.com/v1"),
-        "model": os.getenv("DEEP_THINK_MODEL", "MiniMax-M2.1"),
+        "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+        "model": os.getenv("DEEP_THINK_MODEL", "gpt-4o-mini"),
     }
 
 
@@ -118,7 +121,7 @@ def generate_analysis_prompt(data: dict) -> str:
 - EPS: ${data['eps']:.2f}
 
 ## 最近10日走势
-{chr(10).join([f"- {d['Date'] if hasattr(d, 'Date') else str(d)}: Close=${d['Close']:.2f}" for d in data.get('history', [])])}
+{chr(10).join([f"- {str(d.get('Date', ''))}: Close=${d['Close']:.2f}" for d in data.get('history', [])])}
 
 请生成以下分析报告：
 
@@ -180,9 +183,7 @@ def save_report(ticker: str, data: dict, analysis: str):
 
 
 def main():
-    import argparse
-
-    parser = argparse.ArgumentParser(description="TradingAgents Lite - 轻量版股票分析")
+    parser = ArgumentParser(description="TradingAgents Lite - 轻量版股票分析")
     parser.add_argument("--ticker", type=str, required=True, help="股票代码")
     parser.add_argument("--days", type=int, default=30, help="历史数据天数")
     parser.add_argument("--output", action="store_true", help="输出分析结果")
@@ -197,8 +198,11 @@ def main():
     # 加载配置
     config = load_config()
     if not config["api_key"]:
-        print("❌ 错误: 未找到 API Key，请检查 ~/tradingagent-env")
+        print("❌ 错误: 未找到 API Key，请检查 .env 文件")
         return
+
+    print(f"🔗 Backend URL: {config['base_url']}")
+    print(f"🤖 Model: {config['model']}")
 
     # 获取数据
     print("📊 获取数据中...")
