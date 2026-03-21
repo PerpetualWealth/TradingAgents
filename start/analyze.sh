@@ -85,7 +85,7 @@ fi
 # 2. Run Analysis if needed
 if [ "$SHOULD_RUN" == "true" ]; then
     log "Running TradingAgents AI analysis..."
-    openclaw message send -m "我已安排您的金融分析团队为您分析$TICKER ，预计10-30分钟..." --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
+    openclaw message send -m "我已安排您的金融分析团队为您分析 $TICKER ，预计10-30分钟..." --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
     # Ensure PATH is correct for subprocess calls
     PATH="/opt/miniconda3/bin:$PATH" $PYTHON_BIN -u -m start.main --ticker $TICKER --date $DATE
 fi
@@ -118,7 +118,7 @@ fi
 if [ "$NEED_TRANSLATION" == "true" ]; then
     log "Translating report to Chinese..."
 
-    openclaw message send -m "现在您的金融助理团队正在为您编写$TICKER的报告" --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
+    openclaw message send -m "现在您的金融助理团队正在为您编写 $TICKER 的报告" --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
     
     TEMP_DIR=$(mktemp -d)
     TEMP_MD="$TEMP_DIR/report.md"
@@ -149,7 +149,7 @@ if [ "$IGNORE_EXISTING" != "true" ] && [ -f "$SUMMARY_FILE" ]; then
 else
     log "Generating summary notification..."
 
-    openclaw message send -m "$TICKER完整的报告已为您保存在文档库$REL_REPORT_PATH，我正在阅读报告，马上为您汇报摘要" --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
+    openclaw message send -m "$TICKER 完整的报告已为您保存在文档库 $REL_REPORT_PATH ，我正在阅读报告，马上为您汇报摘要" --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
 
     cat "$FULL_REPORT_PATH" | $PYTHON_BIN "$SKILL_DIR/summarize_notification.py" "$TICKER" "$DATE" "$SUMMARY_FILE"
     log "✅ Summary ready: $SUMMARY_FILE"
