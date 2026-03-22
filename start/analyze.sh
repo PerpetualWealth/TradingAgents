@@ -27,11 +27,6 @@ log() {
     echo "[$(date '+%H:%M:%S')] $*" >&2
 }
 
-# Logging helper
-log() {
-    echo "[$(date '+%H:%M:%S')] $*" >&2
-}
-
 # Parse Arguments
 DATE=$(date +%Y-%m-%d)
 IGNORE_EXISTING="false"
@@ -141,17 +136,19 @@ if [ "$NEED_TRANSLATION" == "true" ]; then
     log "✅ Saved to docbase: $REL_REPORT_PATH"
 fi
 
-# 4. Generate notification - 使用缓存避免重复调用 LLM
+# 4. Generate notification - 直接从JSON生成摘要，避免翻译损失
 SUMMARY_FILE="/tmp/summary_${TICKER}_${DATE}.txt"
 
 if [ "$IGNORE_EXISTING" != "true" ] && [ -f "$SUMMARY_FILE" ]; then
     log "✅ Using cached summary"
 else
-    log "Generating summary notification..."
+    log "Generating summary notification from JSON..."
 
     openclaw message send -m "$TICKER 完整的报告已为您保存在文档库 $REL_REPORT_PATH ，我正在阅读报告，马上为您汇报摘要" --channel telegram --target $MESSAGE_TARGET $THREAD_PARAM
 
-    cat "$FULL_REPORT_PATH" | $PYTHON_BIN "$SKILL_DIR/summarize_notification.py" "$TICKER" "$DATE" "$SUMMARY_FILE"
+    # 直接从JSON生成中文摘要，避免翻译损失
+    log "🚀 使用直接JSON摘要（避免翻译损失，保持数据准确性）"
+    $PYTHON_BIN "$SKILL_DIR/summarize_from_json.py" "$TICKER" "$DATE" "$REPORT_FILE" "$SUMMARY_FILE"
     log "✅ Summary ready: $SUMMARY_FILE"
 fi
 
