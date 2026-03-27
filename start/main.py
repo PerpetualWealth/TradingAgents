@@ -43,10 +43,9 @@ def run_analysis(ticker: str, trade_date: str = None):
     config["quick_think_llm"] = quick_think_model
     config["backend_url"] = backend_url
 
-    # 上游 v0.2.0 已默认使用 yfinance，无需配置 data_vendors
-    # 如需使用 alpha_vantage，可取消注释以下配置：
-    # config["data_vendors"]["fundamental_data"] = "alpha_vantage"
-    # config["data_vendors"]["news_data"] = "alpha_vantage"
+    # 数据源配置：全部使用 yfinance（保持数据一致性）
+    # yfinance 虽然有延迟，但所有数据基于同一数据源，分析更准确
+    # 不设置 data_vendors，使用默认配置（全部 yfinance）
 
     # 辩论轮数（可选，默认为 1）
     config["max_debate_rounds"] = 1
