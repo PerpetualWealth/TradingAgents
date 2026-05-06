@@ -15,9 +15,7 @@ python -m api.server
 SSE 实时分析：
 
 ```bash
-curl -N -X POST http://localhost:8000/analyze \
-  -H "Content-Type: application/json" \
-  -d '{"ticker": "NVDA", "date": "2024-05-10"}'
+curl -N "http://localhost:8000/analyze?ticker=NVDA&date=2024-05-10"
 ```
 
 MCP Tool（用于 Cursor/Claude 等 AI 编程助手）：

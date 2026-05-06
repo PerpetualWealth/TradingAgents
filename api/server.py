@@ -2,9 +2,10 @@ import os
 import json
 import asyncio
 from datetime import date
+from typing import Optional, List
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from sse_starlette.sse import EventSourceResponse
 
 from api.models import AnalyzeRequest, SyncAnalyzeResponse, HealthResponse
@@ -19,17 +20,21 @@ async def health():
     return HealthResponse()
 
 
-@app.post("/analyze")
-async def analyze(request: AnalyzeRequest):
-    trade_date = request.date or date.today().isoformat()
-    analysts = request.analysts
+@app.get("/analyze")
+async def analyze(
+    ticker: str = Query(..., description="Stock ticker symbol"),
+    date: Optional[str] = Query(None, alias="date", description="Analysis date YYYY-MM-DD"),
+    analysts: Optional[str] = Query(None, description="Comma-separated analysts: market,social,news,fundamentals"),
+):
+    from datetime import date as date_type
+    trade_date = date or date_type.today().isoformat()
+    analyst_list = analysts.split(",") if analysts else None
 
     async def event_generator():
         async for event in analyze_sse_stream(
-            ticker=request.ticker,
+            ticker=ticker,
             trade_date=trade_date,
-            analysts=analysts,
-            config_overrides=request.config or None,
+            analysts=analyst_list,
         ):
             yield {
                 "event": event["type"],
