@@ -38,30 +38,53 @@ events: List[Dict[str, Any]] = []
 
 class RecordingCallback(BaseCallbackHandler):
     def __init__(self):
-        self._current_tool = ""
+        self._run_tool_map: Dict[str, str] = {}
 
     def on_tool_start(self, serialized: Dict[str, Any], input_str: str, **kwargs: Any) -> None:
         tool_name = serialized.get("name", "unknown")
+        run_id = str(kwargs.get("run_id", ""))
+        self._run_tool_map[run_id] = tool_name
         with _lock:
-            self._current_tool = tool_name
             events.append({
                 "seq": next(_seq),
                 "event_type": "tool_start",
                 "tool": tool_name,
                 "input": input_str if isinstance(input_str, dict) else {"query": str(input_str)},
+                "run_id": run_id,
+                "parent_run_id": str(kwargs.get("parent_run_id", "")) if kwargs.get("parent_run_id") else "",
+                "tool_call_id": kwargs.get("tool_call_id", ""),
+                "tags": kwargs.get("tags") or [],
+                "inputs": kwargs.get("inputs") or {},
             })
-        print(f"  tool_start: {tool_name}")
+        print(f"  tool_start: {tool_name} (run_id={run_id[:8]}...)")
 
     def on_tool_end(self, output: str, **kwargs: Any) -> None:
-        tool_name = self._current_tool
+        run_id = str(kwargs.get("run_id", ""))
+        tool_name = self._run_tool_map.get(run_id, "unknown")
         with _lock:
             events.append({
                 "seq": next(_seq),
                 "event_type": "tool_result",
                 "tool": tool_name,
                 "output": str(output),
+                "run_id": run_id,
+                "parent_run_id": str(kwargs.get("parent_run_id", "")) if kwargs.get("parent_run_id") else "",
             })
         print(f"  tool_result: {tool_name} ({len(str(output))} chars)")
+
+    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+        run_id = str(kwargs.get("run_id", ""))
+        tool_name = self._run_tool_map.get(run_id, "unknown")
+        with _lock:
+            events.append({
+                "seq": next(_seq),
+                "event_type": "tool_error",
+                "tool": tool_name,
+                "error": str(error),
+                "run_id": run_id,
+                "parent_run_id": str(kwargs.get("parent_run_id", "")) if kwargs.get("parent_run_id") else "",
+            })
+        print(f"  tool_error: {tool_name}: {error}")
 
 
 def serialize_chunk(chunk: Dict[str, Any]) -> Dict[str, Any]:

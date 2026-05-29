@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Dict, Any, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
+from tradingagents.agents.utils.rating import parse_rating
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from api.deps import create_graph
 
@@ -47,6 +48,8 @@ class SSEEventProcessor:
             return self._process_tool_start(raw_event)
         elif event_type == "tool_result":
             return self._process_tool_result(raw_event)
+        elif event_type == "tool_error":
+            return self._process_tool_error(raw_event)
 
         return []
 
@@ -110,10 +113,7 @@ class SSEEventProcessor:
         prev_decision = self.prev_state.get("final_trade_decision", "")
         curr_decision = chunk.get("final_trade_decision", "")
         if not prev_decision and curr_decision:
-            if self.graph is not None:
-                parsed = self.graph.process_signal(curr_decision)
-            else:
-                parsed = curr_decision
+            parsed = parse_rating(curr_decision)
             events.append(
                 _make_event("analysis_complete", self.ticker, decision=parsed, raw_decision=curr_decision)
             )
@@ -123,12 +123,32 @@ class SSEEventProcessor:
 
     def _process_tool_start(self, raw: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [
-            _make_event("tool_call", self.ticker, tool=raw.get("tool", ""), input=raw.get("input", {}))
+            _make_event("tool_call", self.ticker,
+                        tool=raw.get("tool", ""),
+                        input=raw.get("input", {}),
+                        run_id=raw.get("run_id", ""),
+                        parent_run_id=raw.get("parent_run_id", ""),
+                        tool_call_id=raw.get("tool_call_id", ""),
+                        tags=raw.get("tags", []),
+                        inputs=raw.get("inputs", {}))
         ]
 
     def _process_tool_result(self, raw: Dict[str, Any]) -> List[Dict[str, Any]]:
         return [
-            _make_event("tool_result", self.ticker, tool=raw.get("tool", ""), output=raw.get("output", ""))
+            _make_event("tool_result", self.ticker,
+                        tool=raw.get("tool", ""),
+                        output=raw.get("output", ""),
+                        run_id=raw.get("run_id", ""),
+                        parent_run_id=raw.get("parent_run_id", ""))
+        ]
+
+    def _process_tool_error(self, raw: Dict[str, Any]) -> List[Dict[str, Any]]:
+        return [
+            _make_event("tool_error", self.ticker,
+                        tool=raw.get("tool", ""),
+                        error=raw.get("error", ""),
+                        run_id=raw.get("run_id", ""),
+                        parent_run_id=raw.get("parent_run_id", ""))
         ]
 
 
@@ -138,17 +158,48 @@ class SSEStreamCallback(BaseCallbackHandler):
         self.processor = processor
         self.loop = loop
         self.queue = queue
-        self._current_tool = ""
+        self._run_tool_map: Dict[str, str] = {}
 
     def on_tool_start(self, serialized: Dict[str, Any], input_str: Any, **kwargs: Any) -> None:
         tool_name = serialized.get("name", "unknown")
-        self._current_tool = tool_name
-        raw = {"event_type": "tool_start", "tool": tool_name, "input": input_str if isinstance(input_str, dict) else {"query": str(input_str)}}
+        run_id = str(kwargs.get("run_id", ""))
+        self._run_tool_map[run_id] = tool_name
+        raw = {
+            "event_type": "tool_start",
+            "tool": tool_name,
+            "input": input_str if isinstance(input_str, dict) else {"query": str(input_str)},
+            "run_id": run_id,
+            "parent_run_id": str(kwargs.get("parent_run_id", "")) if kwargs.get("parent_run_id") else "",
+            "tool_call_id": kwargs.get("tool_call_id", ""),
+            "tags": kwargs.get("tags") or [],
+            "inputs": kwargs.get("inputs") or {},
+        }
         for event in self.processor.process_raw_event(raw):
             self.loop.call_soon_threadsafe(self.queue.put_nowait, event)
 
     def on_tool_end(self, output: Any, **kwargs: Any) -> None:
-        raw = {"event_type": "tool_result", "tool": self._current_tool, "output": str(output)}
+        run_id = str(kwargs.get("run_id", ""))
+        tool_name = self._run_tool_map.get(run_id, "unknown")
+        raw = {
+            "event_type": "tool_result",
+            "tool": tool_name,
+            "output": str(output),
+            "run_id": run_id,
+            "parent_run_id": str(kwargs.get("parent_run_id", "")) if kwargs.get("parent_run_id") else "",
+        }
+        for event in self.processor.process_raw_event(raw):
+            self.loop.call_soon_threadsafe(self.queue.put_nowait, event)
+
+    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+        run_id = str(kwargs.get("run_id", ""))
+        tool_name = self._run_tool_map.get(run_id, "unknown")
+        raw = {
+            "event_type": "tool_error",
+            "tool": tool_name,
+            "error": str(error),
+            "run_id": run_id,
+            "parent_run_id": str(kwargs.get("parent_run_id", "")) if kwargs.get("parent_run_id") else "",
+        }
         for event in self.processor.process_raw_event(raw):
             self.loop.call_soon_threadsafe(self.queue.put_nowait, event)
 
@@ -164,16 +215,13 @@ def _run_stream_in_thread(
     processor = SSEEventProcessor(ticker, analysts, graph)
     stream_callback = SSEStreamCallback(ticker, processor, loop, queue)
 
+    def on_chunk(chunk):
+        raw = {"event_type": "graph_chunk", "data": chunk}
+        for event in processor.process_raw_event(raw):
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
     try:
-        past_context = graph.memory_log.get_past_context(ticker)
-        init_state = graph.propagator.create_initial_state(ticker, trade_date, past_context=past_context)
-        args = graph.propagator.get_graph_args(callbacks=[stream_callback])
-
-        for chunk in graph.graph.stream(init_state, **args):
-            raw = {"event_type": "graph_chunk", "data": chunk}
-            for event in processor.process_raw_event(raw):
-                loop.call_soon_threadsafe(queue.put_nowait, event)
-
+        graph.propagate(ticker, trade_date, on_chunk=on_chunk, callbacks=[stream_callback])
     except Exception as e:
         loop.call_soon_threadsafe(queue.put_nowait, _make_event("error", ticker, message=str(e)))
     finally:

@@ -262,12 +262,18 @@ class TradingAgentsGraph:
         if updates:
             self.memory_log.batch_update_with_outcomes(updates)
 
-    def propagate(self, company_name, trade_date):
+    def propagate(self, company_name, trade_date, on_chunk=None, callbacks=None):
         """Run the trading agents graph for a company on a specific date.
 
         When ``checkpoint_enabled`` is set in config, the graph is recompiled
         with a per-ticker SqliteSaver so a crashed run can resume from the last
         successful node on a subsequent invocation with the same ticker+date.
+
+        Args:
+            company_name: Stock ticker symbol.
+            trade_date: Analysis date string (YYYY-MM-DD).
+            on_chunk: Optional callback invoked with each stream chunk dict.
+            callbacks: Optional list of LangChain callback handlers for graph args.
         """
         self.ticker = company_name
 
@@ -293,21 +299,28 @@ class TradingAgentsGraph:
                 logger.info("Starting fresh for %s on %s", company_name, trade_date)
 
         try:
-            return self._run_graph(company_name, trade_date)
+            return self._run_graph(company_name, trade_date, on_chunk=on_chunk, callbacks=callbacks)
         finally:
             if self._checkpointer_ctx is not None:
                 self._checkpointer_ctx.__exit__(None, None, None)
                 self._checkpointer_ctx = None
                 self.graph = self.workflow.compile()
 
-    def _run_graph(self, company_name, trade_date):
-        """Execute the graph and write the resulting state to disk and memory log."""
+    def _run_graph(self, company_name, trade_date, on_chunk=None, callbacks=None):
+        """Execute the graph and write the resulting state to disk and memory log.
+
+        Args:
+            company_name: Stock ticker symbol.
+            trade_date: Analysis date string (YYYY-MM-DD).
+            on_chunk: Optional callback invoked with each stream chunk dict.
+            callbacks: Optional list of LangChain callback handlers for graph args.
+        """
         # Initialize state — inject memory log context for PM.
         past_context = self.memory_log.get_past_context(company_name)
         init_agent_state = self.propagator.create_initial_state(
             company_name, trade_date, past_context=past_context
         )
-        args = self.propagator.get_graph_args()
+        args = self.propagator.get_graph_args(callbacks=callbacks)
 
         # Inject thread_id so same ticker+date resumes, different date starts fresh.
         if self.config.get("checkpoint_enabled"):
@@ -317,6 +330,8 @@ class TradingAgentsGraph:
         if self.debug:
             trace = []
             for chunk in self.graph.stream(init_agent_state, **args):
+                if on_chunk:
+                    on_chunk(chunk)
                 if len(chunk["messages"]) == 0:
                     pass
                 else:
