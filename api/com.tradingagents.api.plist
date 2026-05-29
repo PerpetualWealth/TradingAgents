@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tradingagents.api</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/miniconda3/envs/tradingagents/bin/python</string>
+        <string>-m</string>
+        <string>api.server</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/pengziran/development/PerpetualWealth/TradingAgents</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/miniconda3/envs/tradingagents/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/pengziran/Library/Logs/tradingagents-api.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/pengziran/Library/Logs/tradingagents-api.error.log</string>
+</dict>
+</plist>

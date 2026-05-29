@@ -42,7 +42,7 @@ def create_llm_client(
     """
     provider_lower = provider.lower()
 
-    if provider_lower == "minimax":
+    if provider_lower in ("minimax", "minimax-cn"):
         return MiniMaxClient(model, base_url, **kwargs)
 
     if provider_lower in _OPENAI_COMPATIBLE:
