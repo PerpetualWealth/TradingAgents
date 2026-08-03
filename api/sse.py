@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone
@@ -260,7 +261,8 @@ async def analyze_sse_stream(
     selected = analysts or ["market", "social", "news", "fundamentals"]
 
     loop = asyncio.get_event_loop()
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=int(os.getenv("SSE_QUEUE_MAXSIZE", "1000")))
+    event_timeout = float(os.getenv("SSE_EVENT_TIMEOUT", "600"))
 
     if ticker.upper() == "MOCK":
         loop.create_task(_mock_sse_stream(ticker, trade_date, selected, queue))
@@ -278,7 +280,11 @@ async def analyze_sse_stream(
         )
 
     while True:
-        event = await queue.get()
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=event_timeout)
+        except asyncio.TimeoutError:
+            yield _make_event("error", ticker, message=f"SSE event timeout ({event_timeout}s)")
+            break
         if event is None:
             break
         yield event

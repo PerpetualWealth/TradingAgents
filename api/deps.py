@@ -23,10 +23,6 @@ load_env()
 
 def build_config(overrides: Dict[str, Any] = None) -> Dict[str, Any]:
     config = DEFAULT_CONFIG.copy()
-    config["llm_provider"] = os.getenv("LLM_PROVIDER", "openai")
-    config["deep_think_llm"] = os.getenv("DEEP_THINK_MODEL", "gpt-4o-mini")
-    config["quick_think_llm"] = os.getenv("QUICK_THINK_MODEL", "gpt-4o-mini")
-    config["backend_url"] = os.getenv("OPENAI_BASE_URL")
     if overrides:
         config.update(overrides)
     return config
@@ -38,8 +34,9 @@ def create_graph(
 ) -> TradingAgentsGraph:
     config = build_config(config_overrides)
     selected = analysts or ["market", "social", "news", "fundamentals"]
+    debug = os.getenv("TRADINGAGENTS_DEBUG", "false").lower() in ("true", "1", "yes")
     return TradingAgentsGraph(
         selected_analysts=selected,
-        debug=True,
+        debug=debug,
         config=config,
     )

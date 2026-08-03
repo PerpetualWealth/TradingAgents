@@ -12,6 +12,10 @@ class AnalyzeRequest(BaseModel):
         None,
         description="List of analysts to use. Options: market, social, news, fundamentals. Defaults to all.",
     )
+    output_language: Optional[str] = Field(
+        None,
+        description="Output language for reports, e.g. Chinese, English, Japanese.",
+    )
     config: Optional[Dict[str, Any]] = Field(
         default_factory=dict,
         description="Override keys in DEFAULT_CONFIG.",
