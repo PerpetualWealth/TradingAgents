@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import AsyncIterator, Dict, Any, List, Optional
 
 from langchain_core.callbacks import BaseCallbackHandler
-from tradingagents.agents.utils.rating import parse_rating
+from tradingagents.agents.rating import parse_rating
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from api.deps import create_graph
 
@@ -39,6 +39,7 @@ class SSEEventProcessor:
         self.graph = graph
         self.prev_state: Dict[str, Any] = {}
         self.is_first_chunk = True
+        self.seen_messages = set()
 
     def process_raw_event(self, raw_event: Dict[str, Any]) -> List[Dict[str, Any]]:
         event_type = raw_event.get("event_type", "")
@@ -63,22 +64,50 @@ class SSEEventProcessor:
             )
             self.is_first_chunk = False
 
+        for message in chunk.get("messages", []):
+            if isinstance(message, dict):
+                message_type = message.get("type", "message")
+                speaker = message.get("name") or message.get("additional_kwargs", {}).get("name")
+                identity = message.get("id") or (message_type, speaker, str(message.get("content", ""))[:256])
+            else:
+                message_type = type(message).__name__
+                speaker = getattr(message, "name", None)
+                identity = getattr(message, "id", None) or (
+                    message_type, speaker, str(getattr(message, "content", ""))[:256]
+                )
+            if message_type.removesuffix("Message").lower() in {"human", "system"}:
+                continue
+            if identity in self.seen_messages:
+                continue
+            self.seen_messages.add(identity)
+            events.append(_make_event(
+                "agent_progress", self.ticker,
+                agent=speaker or message_type.removesuffix("Message"),
+                phase="activity",
+            ))
+
+        previous = self.prev_state
+        current = {**previous, **{key: value for key, value in chunk.items() if key != "messages"}}
+        for key in ("investment_debate_state", "risk_debate_state"):
+            if isinstance(previous.get(key), dict) and isinstance(current.get(key), dict):
+                current[key] = {**previous[key], **current[key]}
+
         for field, agent_name in REPORT_FIELDS.items():
-            prev_val = self.prev_state.get(field, "")
-            curr_val = chunk.get(field, "")
+            prev_val = previous.get(field, "")
+            curr_val = current.get(field, "")
             if not prev_val and curr_val:
                 events.append(
                     _make_event("agent_complete", self.ticker, agent=agent_name, report_field=field, content=curr_val)
                 )
 
         prev_invest_judge = ""
-        if self.prev_state.get("investment_debate_state"):
-            prev_invest_judge = self.prev_state["investment_debate_state"].get("judge_decision", "")
+        if previous.get("investment_debate_state"):
+            prev_invest_judge = previous["investment_debate_state"].get("judge_decision", "")
         curr_invest_judge = ""
-        if chunk.get("investment_debate_state"):
-            curr_invest_judge = chunk["investment_debate_state"].get("judge_decision", "")
+        if current.get("investment_debate_state"):
+            curr_invest_judge = current["investment_debate_state"].get("judge_decision", "")
         if not prev_invest_judge and curr_invest_judge:
-            debate = chunk["investment_debate_state"]
+            debate = current["investment_debate_state"]
             events.append(
                 _make_event(
                     "debate_update", self.ticker,
@@ -87,18 +116,18 @@ class SSEEventProcessor:
                     bull_history=debate.get("bull_history", ""),
                     bear_history=debate.get("bear_history", ""),
                     history=debate.get("history", ""),
-                    investment_plan=chunk.get("investment_plan", ""),
+                    investment_plan=current.get("investment_plan", ""),
                 )
             )
 
         prev_risk_judge = ""
-        if self.prev_state.get("risk_debate_state"):
-            prev_risk_judge = self.prev_state["risk_debate_state"].get("judge_decision", "")
+        if previous.get("risk_debate_state"):
+            prev_risk_judge = previous["risk_debate_state"].get("judge_decision", "")
         curr_risk_judge = ""
-        if chunk.get("risk_debate_state"):
-            curr_risk_judge = chunk["risk_debate_state"].get("judge_decision", "")
+        if current.get("risk_debate_state"):
+            curr_risk_judge = current["risk_debate_state"].get("judge_decision", "")
         if not prev_risk_judge and curr_risk_judge:
-            debate = chunk["risk_debate_state"]
+            debate = current["risk_debate_state"]
             events.append(
                 _make_event(
                     "debate_update", self.ticker,
@@ -111,15 +140,15 @@ class SSEEventProcessor:
                 )
             )
 
-        prev_decision = self.prev_state.get("final_trade_decision", "")
-        curr_decision = chunk.get("final_trade_decision", "")
+        prev_decision = previous.get("final_trade_decision", "")
+        curr_decision = current.get("final_trade_decision", "")
         if not prev_decision and curr_decision:
             parsed = parse_rating(curr_decision)
             events.append(
                 _make_event("analysis_complete", self.ticker, decision=parsed, raw_decision=curr_decision)
             )
 
-        self.prev_state = chunk
+        self.prev_state = current
         return events
 
     def _process_tool_start(self, raw: Dict[str, Any]) -> List[Dict[str, Any]]:

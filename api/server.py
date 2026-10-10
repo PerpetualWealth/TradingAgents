@@ -6,7 +6,7 @@ from datetime import date
 from typing import Optional, List
 
 import uvicorn
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
@@ -32,7 +32,7 @@ _TICKER_RE = re.compile(r"^[A-Za-z0-9.\-^]{1,20}$")
 def _validate_ticker(ticker: str) -> str:
     ticker = ticker.strip().upper()
     if not _TICKER_RE.match(ticker):
-        raise ValueError(f"Invalid ticker: {ticker}")
+        raise HTTPException(status_code=422, detail=f"Invalid ticker: {ticker}")
     return ticker
 
 

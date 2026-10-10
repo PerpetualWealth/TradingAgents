@@ -186,6 +186,7 @@ curl http://localhost:8000/health
 | 事件类型 | 触发时机 | 关键字段 |
 |----------|----------|----------|
 | `analysis_start` | 分析开始 | `date`, `analysts` |
+| `agent_progress` | 上游流式图执行器产生新的 Agent 消息活动 | `agent`, `phase`（不包含模型消息正文） |
 | `tool_call` | 工具开始调用 | `tool`, `input` |
 | `tool_result` | 工具返回数据 | `tool`, `output` |
 | `agent_complete` | 某个 Agent 分析完成 | `agent`, `report_field`, `content` |
@@ -286,7 +287,7 @@ api/
 
 ## 并发说明
 
-- 每个分析请求在独立线程中运行 `graph.stream()`，互不阻塞
+- 每个分析请求在独立线程中运行上游 `TradingAgentsGraph.stream_run()`，互不阻塞
 - 每个请求创建独立的 `TradingAgentsGraph` 实例，无共享状态
 - 支持同时分析多个 ticker（如同时 POST NVDA 和 AAPL）
 - 单次分析耗时约 10-30 分钟，取决于 LLM 响应速度
@@ -298,9 +299,9 @@ Client POST /analyze {ticker: "NVDA"}
     │
     ├─ FastAPI async endpoint
     │   ├─ 创建 asyncio.Queue
-    │   ├─ asyncio.run_in_executor() → 线程池中运行 sync graph.stream()
-    │   │   └─ 线程内：for chunk in graph.stream():
-    │   │       → detect_events(chunk, prev_state) → event
+    │   ├─ asyncio.run_in_executor() → 线程池中运行 TradingAgentsGraph.stream_run()
+    │   │   └─ 线程内：消费上游的子图消息和状态快照
+    │   │       → detect_events(snapshot, prev_state) → event
     │   │       → loop.call_soon_threadsafe(queue.put(event))
     │   └─ SSE generator: await queue.get() → yield event
     │
